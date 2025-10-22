@@ -1,0 +1,1 @@
+https://www.kaggle.com/datasets/natehenderson/top-100-cryptocurrency-historical-data?select=Burst.csv
