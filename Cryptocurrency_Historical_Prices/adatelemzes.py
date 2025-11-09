@@ -4,28 +4,78 @@ import seaborn as sns
 import plotly.graph_objects as go
 import numpy as np
 
-
+import glob  # Fájlok kereséséhez (pl. 'coin_*.csv')
+import os    # Fájlnevek kezeléséhez
 
 plt.style.use('ggplot')
 # seaborn stílus
 sns.set(style="whitegrid")
 
-#Adatbeolvasás
+
+
+
+# --- MÓDOSÍTOTT ADATBEOLVASÁS (TÖBB CSV FÁJLBÓL) ---
 try:
-    df = pd.read_csv('consolidated_coin_data.csv')
-    oszlopok= ['Open', 'High', 'Low', 'Close', 'Volume', 'Market Cap']
+    all_files = glob.glob("coin_*.csv")
 
-    #Oszlopok numerikussá tétele
+    if not all_files:
+        print("BAAAJ VAAAN")
+        exit()
+
+    print(f"{len(all_files)} db file")
+
+    li = []  # Ebben a listában gyűjtjük a DataFrame-eket
+
+    # 2. Ciklus az összes megtalált fájlon
+    for filename in all_files:
+        # Beolvassuk az egyedi CSV-t
+        temp_df = pd.read_csv(filename)
+
+        # 3. LÉTREHOZZUK A HIÁNYZÓ 'Currency' OSZLOPOT
+        # A kódod többi része 'Currency' oszlopot és kisbetűs neveket (pl. 'bitcoin') vár.
+        # Ezt a 'Name' oszlopból (pl. 'Bitcoin') hozzuk létre.
+        if 'Name' in temp_df.columns:
+            temp_df['Currency'] = temp_df['Name'].str.lower()
+        else:
+            # Ha nincs 'Name' oszlop, megpróbáljuk a fájlnévből kinyerni
+            # pl. "coin_Bitcoin.csv" -> "Bitcoin" -> "bitcoin"
+            currency_name = os.path.basename(filename).replace('coin_', '').replace('.csv', '')
+            temp_df['Currency'] = currency_name.lower()
+
+        li.append(temp_df)
+
+    # összefűzés
+    df = pd.concat(li, axis=0, ignore_index=True)
+
+    print("Az összes valuta adat sikeresen összefűzve egy DataFrame-be.")
+
+
+    # Átnevezzük, hogy a kód működjön.
+    if 'Marketcap' in df.columns:
+        df = df.rename(columns={'Marketcap': 'Market Cap'})
+
+    # Oszlopok, amiket numerikussá kell tenni
+    oszlopok = ['Open', 'High', 'Low', 'Close', 'Volume', 'Market Cap']
+
+    # Oszlopok numerikussá tétele
+    print("Oszlopok numerikussá alakítása...")
     for oszlop in oszlopok:
-
         if oszlop in df.columns and df[oszlop].dtype == 'object':
-
+            # Eltávolítjuk a vesszőket (ha vannak)
             df[oszlop] = df[oszlop].str.replace(',', '', regex=False)
 
-            # Átalakítjuk numerikus típussá (float).
-            # errors='coerce' -> ha valamit (pl. '-') nem tud átalakítani, NaN értéket ad neki,
-            # ahelyett, hogy hibát dobna. Ez a statisztikákhoz megfelelő.
+            # FIGYELEM: Ha az adatok 'm' (millió) vagy 'b' (milliárd) betűket tartalmaznak,
+            # akkor itt egy bonyolultabb átalakítás kellene.
+            # Egyelőre feltételezzük, hogy csak vesszők vannak, mint az előző datasetben.
             df[oszlop] = pd.to_numeric(df[oszlop], errors='coerce')
+        elif oszlop not in df.columns:
+            print(f"Figyelem: A '{oszlop}' oszlop hiányzik, kihagyás...")
+
+    # Hiányzó adatok (NaN) kezelése, amik pl. az 'errors=coerce' miatt keletkeztek
+    df['Volume'] = df['Volume'].fillna(0)
+    df['Market Cap'] = df['Market Cap'].fillna(0)
+    arak = ['Open', 'High', 'Low', 'Close']
+    df[arak] = df[arak].fillna(method='ffill')
 
 
 
@@ -298,7 +348,6 @@ if not df_latest.empty:
 
 
     # Kördiagramm - Market Cap eloszlás
-    print("\n[18. Vizualizáció: Piaci Kapitalizáció Eloszlása (Top 10)]")
     plt.figure(figsize=(10, 8))
     # Kördiagram (pie chart)
     plt.pie(top_10_market_cap['Market Cap'], labels=top_10_market_cap['Currency'], autopct='%1.1f%%', startangle=90)

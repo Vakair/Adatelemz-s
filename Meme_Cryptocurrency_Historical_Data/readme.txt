@@ -1,1 +1,1 @@
-httpswww.kaggle.comdatasetsdeepshah16meme-cryptocurrency-historical-data
+https://www.kaggle.com/datasets/deepshah16/meme-cryptocurrency-historical-data
