@@ -1,153 +1,353 @@
-import os
-import warnings
-warnings.filterwarnings("ignore")
-
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
-import statsmodels.api as sm
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-from datetime import datetime
+import plotly.graph_objects as go
+import numpy as np
 
-# Opció: candlestick és technikai indikátorok
-HAS_MPLFINANCE = False
-HAS_TA = False
+
+
+plt.style.use('ggplot')
+# seaborn stílus
+sns.set(style="whitegrid")
+
+#Adatbeolvasás
 try:
-    import mplfinance as mpf
-    HAS_MPLFINANCE = True
-except Exception:
-    HAS_MPLFINANCE = False
+    df = pd.read_csv('consolidated_coin_data.csv')
+    oszlopok= ['Open', 'High', 'Low', 'Close', 'Volume', 'Market Cap']
 
-try:
-    import ta  # technical analysis library (RSI, MACD, etc.)
-    HAS_TA = True
-except Exception:
-    HAS_TA = False
+    #Oszlopok numerikussá tétele
+    for oszlop in oszlopok:
 
-# --- Konfiguráció ---
-data = "consolidated_coin_data.csv"  # változtasd, ha máshol van
-output = "crypto_analysis_outputs"
-os.makedirs(output, exist_ok=True)
+        if oszlop in df.columns and df[oszlop].dtype == 'object':
 
+            df[oszlop] = df[oszlop].str.replace(',', '', regex=False)
+
+            # Átalakítjuk numerikus típussá (float).
+            # errors='coerce' -> ha valamit (pl. '-') nem tud átalakítani, NaN értéket ad neki,
+            # ahelyett, hogy hibát dobna. Ez a statisztikákhoz megfelelő.
+            df[oszlop] = pd.to_numeric(df[oszlop], errors='coerce')
 
 
 
 
-
-# --- Segédfüggvények és előfeldolgozás ---
-
-def load_and_prepare(path=data):
-    """
-    Betölti a CSV-t, datetime típussá alakítja a Date oszlopot,
-    és a numerikus oszlopokat konvertálja float-ra.
-    Visszatér egy pandas DataFrame-fel.
-    """
-    df = pd.read_csv(path)
-    # Date oszlop feldolgozása
+    # "Date" -> datetime
     df['Date'] = pd.to_datetime(df['Date'])
-    # Alapvető típusok
-    oszlopok = ['Open','High','Low','Close','Volume','Market Cap']
-    for c in oszlopok:
-        # Ha van százalék vagy egyéb, eltávolítjuk (biztonsági lépés)
-        df[c] = pd.to_numeric(df[c], errors='coerce')
-    # Rendezés dátum szerint
-    df = df.sort_values(['Currency','Date']).reset_index(drop=True)
-    #print(df)
-    return df
 
-df = load_and_prepare()
+    #sor azonositoja a date
+    df = df.set_index('Date')
 
+    #datum szerint novekvo sorrend
+    df = df.sort_index()
 
+    # ------- Adatbeolvasas vege ---------
 
-#def basic_ohlc_stats(df, currency):
-def alap_statisztikak(df, currency):
-    """
-    Minimum, maximum, átlag, medián az Open, High, Low, Close oszlopokra egy adott coinra.
-    Visszaad egy DataFrame-et summary formában.
-    """
-    copy = df[df['Currency'] == currency].copy()
-    oszlopok = ['Open','High','Low','Close']
-    statisztika = {}
-    for o in oszlopok:
-        statisztika[o] = {
-            'min': copy[o].min(),
-            'max': copy[o].max(),
-            'mean': copy[o].mean(),
-            'median': copy[o].median(),
-            'std': copy[o].std(),
-            'var': copy[o].var()
-        }
+except FileNotFoundError:
 
-    eredmeny = pd.DataFrame(statisztika).T
-    print(eredmeny)
-    return eredmeny
+    print("AAAAAAAAAAAAAAAAAAAAAAAA, BAJ VAN")
+    exit()  # Kilépés a szkriptből, ha nincs adat
+except Exception as e:
+    print(f"AAAAAAAAAAAAAAAAAAAAAAAA, BAJ VAN: {e}")
+    exit()
 
-alap_statisztikak(df,"tezos")
+# --- alap leirostat. ---
+print("df.info kezdete \n")
+df.info()
+print("df.info vege \n")
 
 
-
-# --- Heti elérhető átlagos profit (medián áron vásárlunk és maxon adunk el) ---
-
-def weekly_max_minus_median(df, currency):
-    """
-    Heti bontásban kiszámolja: weekly_max - weekly_median (a te leírásod szerint).
-    Ez lehet interpretálható 'átlagos árnál befektetett nyereség/veszteség'.
-    """
-    copy = df[df['Currency'] == currency].copy()
-    copy.set_index('Date', inplace=True)
-
-    weekly = copy.resample('W-MON').agg({'High':'max','Close':'median'}).dropna()
-    weekly['max_minus_median'] = weekly['High'] - weekly['Close']
-    weekly = weekly.rename(columns={'High':'weekly_max','Close':'weekly_median'})
-    print(weekly[['weekly_max','weekly_median','max_minus_median']])
-    return weekly[['weekly_max','weekly_median','max_minus_median']]
-weekly_max_minus_median(df,"tezos")
+print("df.describe eleje \n")
+print(df.describe())
+print("df.describe vege \n")
 
 
+egyedi = df['Currency'].nunique()
+print(f"Az adatkészlet {egyedi} kriptovalutát tartalmaz.")
+
+# elemezni kívánt coin kiválasztása
+coin_to_analyze = 'bitcoin'
+
+print(f"\n Egyedi Valuta Elemzése: {coin_to_analyze.capitalize()}")
+
+# Al-DataFrame létrehozása csak a kiválasztott valuta adataival
+# A .copy() használata segít elkerülni a pandas 'SettingWithCopyWarning' figyelmeztetését
+df_coin = df[df['Currency'] == coin_to_analyze].copy()
+
+if df_coin.empty:
+    print("Nincs ilyen nevű Coin a datasetben")
+else:
+    # Árfolyam (Close) alakulása vonaldiagrammal
+    plt.figure(figsize=(14, 7))
+    df_coin['Close'].plot()
+    plt.title(f'{coin_to_analyze.capitalize()} Árfolyam (Close) Alakulása')
+    plt.xlabel('Dátum')
+    plt.ylabel('Ár (USD)')
+    plt.tight_layout()
+    # plt.savefig('1_btc_close_price.png') # Ábra mentése fájlba
 
 
-
-def compute_returns(df, freq='D'):
-    """
-    Számolja a log hozamokat (log returns) napi/het/hónap alapján.
-    freq: 'D' napi, 'W' heti, 'M' havi stb.
-    Visszaad egy DataFrame-et: Date, Currency, ret_log, ret_simple
-    """
-    out = []
-    for coin, g in df.groupby('Currency'):
-        tmp = g[['Date','Close']].set_index('Date').resample(freq).last().dropna()
-        # egyszeri hozam: (P_t / P_{t-1} - 1)
-        tmp['ret_simple'] = tmp['Close'].pct_change()
-        tmp['ret_log'] = np.log(tmp['Close']).diff()
-        tmp['Currency'] = coin
-        tmp = tmp.dropna()
-        out.append(tmp.reset_index())
-    print(pd.concat(out, ignore_index=True))
-    return pd.concat(out, ignore_index=True)
-
-compute_returns(df, freq='D')
+    #Kereskedési volumen (kereskedesi forgalom) alakulása
+    plt.figure(figsize=(14, 7))
+    df_coin['Volume'].plot(color='blue')
+    plt.title(f'{coin_to_analyze.capitalize()} Kereskedési Volumen Alakulása')
+    plt.xlabel('Dátum')
+    plt.ylabel('Volumen (USD)')
+    plt.tight_layout()
+    # plt.savefig('2_btc_volume.png')
 
 
 
+    # Mozgóátlagok - Moving Averages (MA)
 
-def volatility(returns_series):
-    """
-    Volatilitás: egyszerűen a hozamok szórása.
-    Ha a hozamok napiak, akkor annualizálhatjuk: sigma * sqrt(252).
-    Visszaad napi szórást és annualizáltat is.
-    """
-    daily_std = returns_series.std()
-    annualized = daily_std * np.sqrt(252)  # 252 kereskedési nap közelítése
-    #print(daily_std, annualized)
-    return daily_std, annualized
+    #50 napos trend
+    df_coin['MA50'] = df_coin['Close'].rolling(window=50).mean()
+    #200 napos trend
+    df_coin['MA200'] = df_coin['Close'].rolling(window=200).mean()
 
-print("diiwdjiwdjowjdjwdjiowojpdwodwd")
-# Először kiszámoljuk a hozamokat
-returns_df = compute_returns(df, freq='D')
-# Szűrjük az adott coinra, pl. "tezos"
-tezos_returns = returns_df[returns_df['Currency'] == 'tezos']
-# Átadjuk a log hozamokat a volatility függvénynek
-volatility(tezos_returns['ret_log'])
-volatility(tezos_returns['ret_simple'])
+    plt.figure(figsize=(14, 7))
+    plt.plot(df_coin.index, df_coin['Close'], label='Záróár (Close)', alpha=0.7)
+    plt.plot(df_coin.index, df_coin['MA50'], label='50 napos mozgóátlag (MA50)', color='orange')
+    plt.plot(df_coin.index, df_coin['MA200'], label='200 napos mozgóátlag (MA200)', color='red')
+    plt.title(f'{coin_to_analyze.capitalize()} Árfolyam Mozgóátlagokkal')
+    plt.xlabel('Dátum')
+    plt.ylabel('Ár (USD)')
+    plt.legend()
+    plt.tight_layout()
+    # plt.savefig('3_btc_moving_averages.png')
+
+
+
+    # A napi hozam (záróár változása százalékban) -> százalékos növekedés vagy csokkenes
+    # (Mai ár - Tegnapi ár) / Tegnapi ár
+    df_coin['Daily_Return'] = df_coin['Close'].pct_change()
+    print("A napi hozamok átlaga:", df_coin['Daily_Return'].mean())
+    print("A napi hozamok mediánja:", df_coin['Daily_Return'].median())
+    print("\n")
+
+
+    # napi hozamok eloszlása -> napi pozitiv/negativ változások gyakorisága
+    plt.figure(figsize=(10, 6))
+    # A .dropna() eltávolítja az első napot ahol nincs hozam -> NaN érték van
+    sns.histplot(df_coin['Daily_Return'].dropna(), bins=100, kde=True,
+                 color='green')
+    plt.title(f'{coin_to_analyze.capitalize()} Napi Hozamok Eloszlása')
+    plt.xlabel('Napi Hozam (%)')
+    plt.ylabel('Gyakoriság')
+    plt.tight_layout()
+    # plt.savefig('4_btc_daily_returns_hist.png')
+
+
+    # Volatilitás (szórás) , kiszamoljuk egy napra jellemző átlagos ármozgás mértékét.
+    daily_volatility = df_coin['Daily_Return'].std()
+    print(f"Napi volatilitás (szórás): {daily_volatility:.4f}")
+    annualized_volatility = daily_volatility * np.sqrt(365)
+    print(f"Évesített volatilitás: {annualized_volatility:.4f}")
+
+
+
+    # Gyertyás diagram
+    #utolsó 100 napot
+    df_coin_100 = df_coin.tail(100)
+
+    fig = go.Figure(data=[go.Candlestick(x=df_coin_100.index,
+                                         open=df_coin_100['Open'],
+                                         high=df_coin_100['High'],
+                                         low=df_coin_100['Low'],
+                                         close=df_coin_100['Close'])])
+
+    fig.update_layout(
+        title=f'{coin_to_analyze.capitalize()} Gyertya Diagram (Utolsó 100 nap)',
+        yaxis_title='Ár (USD)',
+        xaxis_rangeslider_visible=False
+    )
+    fig.show() # bongeszo
+
+
+
+    # <---- IDŐ ALAPÚ ELEMZÉSEK ----->
+
+
+    df_coin['Day_of_Week'] = df_coin.index.dayofweek  # 0=Hétfő, 1=Kedd, ..., 6=Vasárnap
+    df_coin['Month'] = df_coin.index.month  # 1=Január, ..., 12=December
+    napok = ['Hétfő', 'Kedd', 'Szerda', 'Csütörtök', 'Péntek', 'Szombat', 'Vasárnap']
+    honapok = ['Jan', 'Feb', 'Már', 'Ápr', 'Máj', 'Jún', 'Júl', 'Aug', 'Szep', 'Okt', 'Nov', 'Dec']
+
+    # átlagos hozam a hét napjai szerint
+    plt.figure(figsize=(10, 6))
+    avg_return_day = df_coin.groupby('Day_of_Week')['Daily_Return'].mean()
+    avg_return_day.index = avg_return_day.index.map(lambda x: napok[x])
+    avg_return_day = avg_return_day.reindex(napok)
+
+    avg_return_day.plot(kind='bar', color='purple')
+    plt.title(f'{coin_to_analyze.capitalize()} Átlagos Napi Hozam a Hét Napjai Szerint')
+    plt.xlabel('Hét Napja')
+    plt.ylabel('Átlagos Napi Hozam')
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    # plt.savefig('10_btc_return_by_day.png')
+
+
+
+
+    #átlagos volumen a hét napjai szerint -> coinban lévő pénz mennyiség
+    plt.figure(figsize=(10, 6))
+    avg_volume_day = df_coin.groupby('Day_of_Week')['Volume'].mean()
+    avg_volume_day.index = avg_volume_day.index.map(lambda x: napok[x])
+    avg_volume_day = avg_volume_day.reindex(napok)
+
+    avg_volume_day.plot(kind='bar', color='orange')
+    plt.title(f'{coin_to_analyze.capitalize()} Átlagos Kereskedési Volumen a Hét Napjai Szerint')
+    plt.xlabel('Hét Napja')
+    plt.ylabel('Átlagos Volumen (USD)')
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    # plt.savefig('11_btc_volume_by_day.png')
+
+
+
+
+    #átlagos hozam a hónapok szerint -> mennyit emelkedik az ár átlagosan egy adott hónapban
+    plt.figure(figsize=(10, 6))
+    avg_return_month = df_coin.groupby('Month')['Daily_Return'].mean()
+    avg_return_month.index = avg_return_month.index.map(
+        lambda x: honapok[x - 1])
+    avg_return_month = avg_return_month.reindex(honapok)
+
+    avg_return_month.plot(kind='bar', color='cyan')
+    plt.title(f'{coin_to_analyze.capitalize()} Átlagos Napi Hozam a Hónapok Szerint')
+    plt.xlabel('Hónap')
+    plt.ylabel('Átlagos Napi Hozam')
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    # plt.savefig('12_btc_return_by_month.png')
+
+
+
+
+    # napi ártartomány -> high - low
+    df_coin['Daily_Range'] = df_coin['High'] - df_coin['Low']
+    df_coin['Daily_Range_Pct'] = (df_coin['Daily_Range'] / df_coin['Close']) * 100
+
+    print("Átlagos napi ártartomány (USD):", df_coin['Daily_Range'].mean())
+    print("Átlagos napi ártartomány (Záróár %-a):", df_coin['Daily_Range_Pct'].mean())
+    print("\n")
+
+
+
+    # napi ártartomány százalékos eloszlása a hét napjai szerint
+    # Box Plot
+    plt.figure(figsize=(14, 7))
+    sns.boxplot(x='Day_of_Week', y='Daily_Range_Pct', data=df_coin)
+    plt.title(f'{coin_to_analyze.capitalize()} Napi Ártartomány (Intraday Volatilitás , High - Low) Eloszlása')
+    plt.xticks(ticks=range(7), labels=napok)
+    plt.xlabel('Hét Napja')
+    plt.ylabel('Napi Ártartomány (a Záróár %-ában)')
+    plt.tight_layout()
+    # plt.savefig('13_btc_daily_range_boxplot.png')
+
+
+
+
+
+# <--- TÖBB VALUTA ÖSSZEHASONÉÍTÁSA --->
+
+# top 10 valuta a datasetben
+
+latest_date = df.index.max()
+
+df_latest = df.loc[latest_date]
+
+# Ha egy napon több valuta is van (ami valószínű), akkor megkeressük a 10 legnagyobbat
+if not df_latest.empty:
+    if isinstance(df_latest, pd.DataFrame):
+        top_10_market_cap = df_latest.nlargest(10, 'Market Cap')
+    else:
+        top_10_market_cap = df.nlargest(10, 'Market Cap')
+
+    top_10_coins = top_10_market_cap['Currency'].tolist()
+    print(f"Top 10 valuta: {top_10_coins}")
+    print("\n")
+
+
+    df_top10 = df[df['Currency'].isin(top_10_coins)]
+
+
+
+    #Korrelációs mátrix -> close alapján
+    df_pivot = df_top10.pivot_table(index='Date', columns='Currency', values='Close')
+    # napi hozamok számítása a pivotált táblán
+    df_returns = df_pivot.pct_change()
+
+    correlation_matrix = df_returns.corr()
+
+    #HEATMAP
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+    plt.title('Top 10 Valuta Napi Hozamainak Korrelációja')
+    plt.tight_layout()
+    # plt.savefig('6_correlation_matrix.png')
+
+
+
+
+    # Korrelációs mátrix printelése
+    print("Korrelációs mátrix:\n")
+    print("1 = tökéletes együttmozgás, -1 = tökéletes ellentétes mozgás, 0 = nincs összefüggés")
+    print(correlation_matrix)
+
+
+
+
+    # Kördiagramm - Market Cap eloszlás
+    print("\n[18. Vizualizáció: Piaci Kapitalizáció Eloszlása (Top 10)]")
+    plt.figure(figsize=(10, 8))
+    # Kördiagram (pie chart)
+    plt.pie(top_10_market_cap['Market Cap'], labels=top_10_market_cap['Currency'], autopct='%1.1f%%', startangle=90)
+    plt.title('Top 10 Valuta Piaci Kapitalizációjának Eloszlása (Legutolsó Adat)')
+    plt.axis('equal')
+    plt.tight_layout()
+    # plt.savefig('7_market_cap_pie.png')
+
+
+
+
+
+    #Napi volatilitás összehasonlítása (Top 10)
+    volatility_comparison = df_returns.std().sort_values(ascending=False)
+
+    plt.figure(figsize=(12, 6))
+    sns.barplot(x=volatility_comparison.index, y=volatility_comparison.values)
+    plt.title('Napi Volatilitás (Szórás) Összehasonlítása (Top 10)')
+    plt.xlabel('Valuta')
+    plt.ylabel('Napi Volatilitás (Szórás)')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    # plt.savefig('8_volatility_comparison.png')
+
+
+
+
+    # Normalizált árfolyamok -> relatív teljesítmény
+    df_pivot_filled = df_pivot.fillna(method='ffill').dropna()
+
+    if not df_pivot_filled.empty:
+        df_normalized = (df_pivot_filled / df_pivot_filled.iloc[0] * 100)
+
+        plt.figure(figsize=(14, 7))
+        df_normalized.plot(ax=plt.gca())
+        plt.title('Normalizált Árfolyamok (Relatív Teljesítmény)')
+        plt.xlabel('Dátum')
+        plt.ylabel('Normalizált Ár (Kezdőérték = 100)')
+        plt.legend(loc='upper left', bbox_to_anchor=(1.0, 1.0))
+        plt.tight_layout()
+        # plt.savefig('9_normalized_prices.png', bbox_inches='tight') # bbox_inches='tight' -> mentéskor ne vágja le a jelmagyarázatot
+    else:
+        print("A normalizált árfolyamok ábrája nem készíthető el -> túl sok a hiányzó adat.")
+
+else:
+    print("BAJ VAN A TOP 10el")
+
+
+
+
+plt.show()
+
